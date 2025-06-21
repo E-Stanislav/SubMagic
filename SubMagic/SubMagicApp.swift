@@ -21,7 +21,17 @@ struct SubMagicApp: App {
                     showFileImporter = true
                 }
                 .keyboardShortcut("i", modifiers: [.command])
+                Button("Close Media…") {
+                    NotificationCenter.default.post(name: .closeMedia, object: nil)
+                }
+                .keyboardShortcut("w", modifiers: [.command])
+                .disabled(false)
             }
         }
     }
+}
+
+// ВНИЗУ ФАЙЛА
+extension Notification.Name {
+    static let closeMedia = Notification.Name("CloseMediaNotification")
 }
