@@ -124,81 +124,115 @@ struct ModelManagerView: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Менеджер моделей Whisper")
-                .font(.title)
-                .padding(.top)
-            if let path = modelManager.modelPath, !path.isEmpty {
-                Text("Текущая модель: \(URL(fileURLWithPath: path).lastPathComponent)")
-                    .font(.subheadline)
-            } else {
-                Text("Модель не выбрана")
-                    .foregroundColor(.secondary)
-            }
-            HStack(spacing: 12) {
-                Button("Выбрать файл модели…") {
-                    showFilePicker = true
-                }
-                Picker("Модель:", selection: $selectedModel) {
-                    Text("— выберите —").tag(Optional<WhisperModel>(nil))
-                    ForEach(modelManager.availableModels) { model in
-                        Text("\(model.name) (\(model.sizeMB) MB)").tag(Optional(model))
-                    }
-                }
-                .frame(width: 200)
-                Button("Скачать выбранную модель…") {
-                    if let model = selectedModel {
-                        modelManager.downloadModel(model, to: modelsDirectory) { _ in
-                            refreshDownloadedModels()
-                        }
-                    }
-                }
-                .disabled(selectedModel == nil || modelManager.isDownloading)
-            }
-            if modelManager.isDownloading, let name = modelManager.downloadingModelName {
-                VStack(alignment: .leading) {
-                    Text("Загрузка модели: \(name)")
-                    ProgressView(value: modelManager.downloadProgress) {
-                        Text(String(format: "%.0f%%", modelManager.downloadProgress * 100))
-                    }
-                    .progressViewStyle(LinearProgressViewStyle())
-                    Button("Стоп") {
-                        modelManager.cancelDownload()
-                    }
-                    .padding(.top, 4)
-                }
-            }
-            if let error = modelManager.error {
-                Text("Ошибка: \(error)")
-                    .foregroundColor(.red)
-            }
-            Divider()
-            Text("Скачанные модели:")
-                .font(.headline)
-            List {
-                ForEach(downloadedModels, id: \.path) { url in
-                    HStack {
-                        Text(url.lastPathComponent)
-                            .font(activeModelPath == url.path ? .headline : .body)
-                        Spacer()
-                        if activeModelPath == url.path {
-                            Text("(активная)")
-                                .foregroundColor(.accentColor)
-                        } else {
-                            Button("Сделать активной") {
-                                setActiveModel(url)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                Text("Whisper: управление моделями")
+                    .font(.largeTitle.bold())
+                    .padding(.top, 8)
+                GroupBox(label: Label("Доступные модели для скачивания", systemImage: "arrow.down.circle")) {
+                    HStack(spacing: 16) {
+                        Picker("Модель:", selection: $selectedModel) {
+                            Text("— выберите —").tag(Optional<WhisperModel>(nil))
+                            ForEach(modelManager.availableModels) { model in
+                                Text("\(model.name) (\(model.sizeMB) MB)").tag(Optional(model))
                             }
                         }
-                        Button(role: .destructive) {
-                            deleteModel(url)
+                        .frame(width: 200)
+                        Button {
+                            if let model = selectedModel {
+                                modelManager.downloadModel(model, to: modelsDirectory) { _ in
+                                    refreshDownloadedModels()
+                                }
+                            }
                         } label: {
-                            Image(systemName: "trash")
+                            Label("Скачать", systemImage: "arrow.down.circle.fill")
+                                .font(.headline)
                         }
-                        .buttonStyle(BorderlessButtonStyle())
+                        .buttonStyle(.borderedProminent)
+                        .disabled(selectedModel == nil || modelManager.isDownloading)
+                    }
+                    .padding(.vertical, 4)
+                    if modelManager.isDownloading, let name = modelManager.downloadingModelName {
+                        HStack(spacing: 12) {
+                            ProgressView(value: modelManager.downloadProgress)
+                                .frame(width: 120)
+                            Text("\(name): ")
+                            Text(String(format: "%.0f%%", modelManager.downloadProgress * 100))
+                                .monospacedDigit()
+                            Button("Стоп", systemImage: "xmark.circle") {
+                                modelManager.cancelDownload()
+                            }
+                            .buttonStyle(.bordered)
+                            .foregroundColor(.red)
+                        }
+                        .padding(.top, 4)
+                        .transition(.opacity)
+                    }
+                    if let error = modelManager.error {
+                        Text("Ошибка: \(error)")
+                            .foregroundColor(.red)
+                            .font(.caption)
+                            .padding(.top, 2)
                     }
                 }
+                Divider()
+                Text("Скачанные модели")
+                    .font(.title2.bold())
+                    .padding(.bottom, 2)
+                if downloadedModels.isEmpty {
+                    Text("Нет скачанных моделей. Скачайте одну из доступных выше.")
+                        .foregroundColor(.secondary)
+                        .padding(.vertical, 12)
+                } else {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 320), spacing: 16)], spacing: 16) {
+                        ForEach(downloadedModels, id: \.path) { url in
+                            ZStack(alignment: .topTrailing) {
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(activeModelPath == url.path ? Color.accentColor.opacity(0.12) : Color(.windowBackgroundColor))
+                                    .shadow(color: .black.opacity(0.07), radius: 4, x: 0, y: 2)
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        Image(systemName: "cpu")
+                                            .font(.title2)
+                                            .foregroundColor(.accentColor)
+                                        Text(url.lastPathComponent)
+                                            .font(.headline)
+                                            .lineLimit(1)
+                                        Spacer()
+                                        if activeModelPath == url.path {
+                                            Label("Активная", systemImage: "checkmark.seal.fill")
+                                                .labelStyle(.iconOnly)
+                                                .foregroundColor(.accentColor)
+                                        }
+                                    }
+                                    HStack(spacing: 12) {
+                                        if activeModelPath != url.path {
+                                            Button {
+                                                setActiveModel(url)
+                                            } label: {
+                                                Label("Сделать активной", systemImage: "checkmark.circle")
+                                            }
+                                            .buttonStyle(.borderedProminent)
+                                        }
+                                        Button(role: .destructive) {
+                                            deleteModel(url)
+                                        } label: {
+                                            Label("Удалить", systemImage: "trash")
+                                        }
+                                        .buttonStyle(.bordered)
+                                    }
+                                }
+                                .padding(16)
+                            }
+                            .frame(height: 90)
+                            .animation(.easeInOut, value: activeModelPath)
+                        }
+                    }
+                    .padding(.bottom, 8)
+                }
             }
-            .frame(height: 180)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
             .onAppear {
                 refreshDownloadedModels()
                 activeModelPath = modelManager.modelPath
@@ -209,9 +243,7 @@ struct ModelManagerView: View {
             .onChange(of: modelManager.isDownloading) { _, _ in
                 refreshDownloadedModels()
             }
-            Spacer()
         }
-        .padding()
         .fileImporter(isPresented: $showFilePicker, allowedContentTypes: [.data], allowsMultipleSelection: false) { result in
             if case .success(let urls) = result, let url = urls.first {
                 modelManager.setModelPath(url.path)
