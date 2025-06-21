@@ -7,6 +7,22 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
+import AVKit
+
+class PlayerHolder: ObservableObject {
+    @Published var player: AVPlayer? = nil
+    func setURL(_ url: URL?) {
+        if let url = url {
+            if let current = player {
+                current.replaceCurrentItem(with: AVPlayerItem(url: url))
+            } else {
+                player = AVPlayer(url: url)
+            }
+        } else {
+            player = nil
+        }
+    }
+}
 
 struct ContentView: View {
     @State private var selectedTab = 0
@@ -15,11 +31,12 @@ struct ContentView: View {
     @Binding var showFileImporter: Bool
     // Новый биндинг для управления закрытием видео
     var closeVideo: (() -> Void)? = nil
+    @StateObject private var playerHolder = PlayerHolder()
     
     var body: some View {
         ZStack {
             TabView(selection: $selectedTab) {
-                VideoEditorView(videoURL: selectedVideoURL)
+                VideoEditorView(playerHolder: playerHolder)
                     .tabItem {
                         Label("Редактор", systemImage: "film")
                     }
@@ -53,6 +70,7 @@ struct ContentView: View {
                         selectedVideoURL = url
                         securityScopedResource = url
                         selectedTab = 1 // Переключаемся на редактор
+                        playerHolder.setURL(url)
                     } else {
                         print("Не удалось получить доступ к файлу: \(url)")
                     }
@@ -74,6 +92,7 @@ struct ContentView: View {
                             }
                             selectedVideoURL = url
                             selectedTab = 1
+                            playerHolder.setURL(url)
                         }
                     } else if let url = item as? URL {
                         DispatchQueue.main.async {
@@ -84,6 +103,7 @@ struct ContentView: View {
                             }
                             selectedVideoURL = url
                             selectedTab = 1
+                            playerHolder.setURL(url)
                         }
                     }
                 }
@@ -104,7 +124,8 @@ struct ContentView: View {
             }
             NotificationCenter.default.removeObserver(self, name: .closeMedia, object: nil)
         }
-        .onChange(of: selectedVideoURL) { newValue in
+        .onChange(of: selectedVideoURL) { _, newValue in
+            playerHolder.setURL(newValue)
             // Если видео закрыто, освобождаем ресурс
             if newValue == nil {
                 closeVideo?()
@@ -121,6 +142,7 @@ struct ContentView: View {
             securityScopedResource = nil
         }
         selectedVideoURL = nil
+        playerHolder.setURL(nil)
     }
 }
 
