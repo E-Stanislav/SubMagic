@@ -8,22 +8,10 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-private struct ShowFileImporterKey: EnvironmentKey {
-    static let defaultValue: Binding<Bool>? = nil
-}
-
-extension EnvironmentValues {
-    var _showFileImporter: Binding<Bool>? {
-        get { self[ShowFileImporterKey.self] }
-        set { self[ShowFileImporterKey.self] = newValue }
-    }
-}
-
 struct ContentView: View {
     @State private var selectedTab = 0
     @State private var selectedVideoURL: URL? = nil
-    @State private var showFileImporter = false
-    @Environment(\._showFileImporter) private var showFileImporterFromMenu
+    @Binding var showFileImporter: Bool
     
     var body: some View {
         ZStack {
@@ -46,15 +34,20 @@ struct ContentView: View {
             }
         }
         .fileImporter(
-            isPresented: showFileImporterFromMenu ?? $showFileImporter,
+            isPresented: $showFileImporter,
             allowedContentTypes: [.movie, .audio],
             allowsMultipleSelection: false
         ) { result in
             switch result {
             case .success(let urls):
                 if let url = urls.first {
-                    selectedVideoURL = url
-                    selectedTab = 1 // Переключаемся на редактор
+                    if url.startAccessingSecurityScopedResource() {
+                        selectedVideoURL = url
+                        selectedTab = 1 // Переключаемся на редактор
+                        // Важно: stopAccessingSecurityScopedResource нужно вызвать, когда видео больше не нужно
+                    } else {
+                        print("Не удалось получить доступ к файлу: \(url)")
+                    }
                 }
             case .failure:
                 break
@@ -84,5 +77,5 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView()
+    ContentView(showFileImporter: .constant(false))
 }

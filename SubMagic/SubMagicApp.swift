@@ -13,11 +13,10 @@ struct SubMagicApp: App {
     
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environment(\._showFileImporter, $showFileImporter)
+            ContentView(showFileImporter: $showFileImporter)
         }
         .commands {
-            CommandGroup(after: .appInfo) {
+            CommandGroup(after: .newItem) {
                 Button("Import…") {
                     showFileImporter = true
                 }
