@@ -60,10 +60,16 @@ struct ContentView: View {
                 break
             }
         }
-        .onDrop(of: [UTType.movie.identifier, UTType.audio.identifier], isTargeted: nil) { providers in
+        .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil) { providers in
             if let provider = providers.first {
-                _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                    if let url = url {
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                    if let data = item as? Data,
+                       let url = URL(dataRepresentation: data, relativeTo: nil) {
+                        DispatchQueue.main.async {
+                            selectedVideoURL = url
+                            selectedTab = 1
+                        }
+                    } else if let url = item as? URL {
                         DispatchQueue.main.async {
                             selectedVideoURL = url
                             selectedTab = 1
