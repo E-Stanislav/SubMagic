@@ -6,32 +6,73 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
+
+private struct ShowFileImporterKey: EnvironmentKey {
+    static let defaultValue: Binding<Bool>? = nil
+}
+
+extension EnvironmentValues {
+    var _showFileImporter: Binding<Bool>? {
+        get { self[ShowFileImporterKey.self] }
+        set { self[ShowFileImporterKey.self] = newValue }
+    }
+}
 
 struct ContentView: View {
     @State private var selectedTab = 0
+    @State private var selectedVideoURL: URL? = nil
+    @State private var showFileImporter = false
+    @Environment(\._showFileImporter) private var showFileImporterFromMenu
     
     var body: some View {
-        TabView(selection: $selectedTab) {
-            ImportView()
-                .tabItem {
-                    Label("Импорт", systemImage: "square.and.arrow.down")
+        ZStack {
+            TabView(selection: $selectedTab) {
+                VideoEditorView(videoURL: selectedVideoURL)
+                    .tabItem {
+                        Label("Редактор", systemImage: "film")
+                    }
+                    .tag(1)
+                ModelManagerView()
+                    .tabItem {
+                        Label("Модели", systemImage: "cpu")
+                    }
+                    .tag(2)
+                SettingsView()
+                    .tabItem {
+                        Label("Настройки", systemImage: "gear")
+                    }
+                    .tag(3)
+            }
+        }
+        .fileImporter(
+            isPresented: showFileImporterFromMenu ?? $showFileImporter,
+            allowedContentTypes: [.movie, .audio],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first {
+                    selectedVideoURL = url
+                    selectedTab = 1 // Переключаемся на редактор
                 }
-                .tag(0)
-            VideoEditorView()
-                .tabItem {
-                    Label("Редактор", systemImage: "film")
+            case .failure:
+                break
+            }
+        }
+        .onDrop(of: [UTType.movie.identifier, UTType.audio.identifier], isTargeted: nil) { providers in
+            if let provider = providers.first {
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    if let url = url {
+                        DispatchQueue.main.async {
+                            selectedVideoURL = url
+                            selectedTab = 1
+                        }
+                    }
                 }
-                .tag(1)
-            ModelManagerView()
-                .tabItem {
-                    Label("Модели", systemImage: "cpu")
-                }
-                .tag(2)
-            SettingsView()
-                .tabItem {
-                    Label("Настройки", systemImage: "gear")
-                }
-                .tag(3)
+                return true
+            }
+            return false
         }
     }
 }
