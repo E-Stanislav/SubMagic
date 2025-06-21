@@ -18,6 +18,18 @@ struct VideoEditorView: View {
                         .aspectRatio(16/9, contentMode: .fit)
                         .frame(minHeight: 300)
                         .padding()
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            Button(action: transcribeWithWhisper) {
+                                Label("Транскрибировать (Whisper)", systemImage: "waveform")
+                            }
+                            .padding(12)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.15)))
+                            .padding()
+                        }
+                    }
                 }
                 .contextMenu {
                     Button("Открыть в полном экране") {
@@ -51,6 +63,75 @@ struct VideoEditorView: View {
 }
 
 // --- ВНИЗУ ФАЙЛА ---
+
+import AppKit
+import AVFoundation
+
+extension VideoEditorView {
+    func transcribeWithWhisper() {
+        guard let url = playerHolder.player?.currentItem?.asset as? AVURLAsset else { return }
+        let videoURL = url.url
+        // 1. Извлечь аудио во временный файл
+        let audioURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".wav")
+        extractAudio(from: videoURL, to: audioURL) { success in
+            if success {
+                // 2. Запустить whisper.cpp через subprocess
+                runWhisperTranscription(audioURL: audioURL)
+            } else {
+                showTranscriptionResult("Ошибка извлечения аудио")
+            }
+        }
+    }
+    
+    func extractAudio(from videoURL: URL, to audioURL: URL, completion: @escaping (Bool) -> Void) {
+        let asset = AVAsset(url: videoURL)
+        guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
+            completion(false)
+            return
+        }
+        exporter.outputURL = audioURL
+        exporter.outputFileType = .wav
+        exporter.timeRange = CMTimeRange(start: .zero, duration: asset.duration)
+        exporter.exportAsynchronously {
+            DispatchQueue.main.async {
+                completion(exporter.status == .completed)
+            }
+        }
+    }
+    
+    func runWhisperTranscription(audioURL: URL) {
+        // Получаем путь к whisper.cpp и модели из UserDefaults/менеджера
+        let whisperPath = "/usr/local/bin/whisper" // Можно вынести в настройки
+        let modelPath = UserDefaults.standard.string(forKey: "whisperModelPath") ?? "/usr/local/models/ggml-base.bin"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: whisperPath)
+        process.arguments = [audioURL.path, "--model", modelPath, "--language", "ru"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        do {
+            try process.run()
+        } catch {
+            showTranscriptionResult("Ошибка запуска whisper.cpp: \(error.localizedDescription)")
+            return
+        }
+        DispatchQueue.global().async {
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8) ?? ""
+            DispatchQueue.main.async {
+                self.showTranscriptionResult(output)
+            }
+        }
+    }
+    
+    func showTranscriptionResult(_ text: String) {
+        let alert = NSAlert()
+        alert.messageText = "Результат транскрипции"
+        alert.informativeText = text.prefix(5000).description // Ограничение на размер
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+}
 
 import AppKit
 class FullScreenWindowController: NSWindowController {
