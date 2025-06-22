@@ -8,8 +8,22 @@
 import SwiftUI
 
 struct ContentView: View {
+    @State private var selectedTab = 1
+    
     var body: some View {
-        ImportView()
+        TabView(selection: $selectedTab) {
+            ImportView()
+                .tabItem {
+                    Label("Редактор", systemImage: "film")
+                }
+                .tag(1)
+            
+            SettingsView()
+                .tabItem {
+                    Label("Настройки", systemImage: "gear")
+                }
+                .tag(2)
+        }
     }
 }
 

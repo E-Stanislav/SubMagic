@@ -92,10 +92,11 @@ struct VideoEditorView: View {
                 }
                 .background(KeyboardShortcutCatcher(openFullScreen: { openFullScreen(player: player) }))
                 // --- КНОПКИ ПОД ВИДЕО ---
-                HStack(spacing: 12) {
+                HStack {
                     Button("Транскрибировать") {
                         Task { await transcribeWithWhisper() }
                     }
+                    
                     Button("Перевести") {
                         isTranslating.toggle()
                     }
@@ -115,8 +116,16 @@ struct VideoEditorView: View {
                         }
                         .padding()
                     }
+                    
+                    Spacer()
+                    
+                    Button(role: .destructive) {
+                        project.closeProject()
+                    } label: {
+                        Label("Закрыть", systemImage: "xmark.circle")
+                    }
                 }
-                .padding(.bottom, 8)
+                .padding()
             } else {
                 Text("Загрузка видео...")
                     .onAppear {
@@ -136,6 +145,25 @@ struct VideoEditorView: View {
             set: { if !$0 { translationResult = nil } }
         )) {
             Alert(title: Text("Результат перевода"), message: Text(translationResult ?? ""), dismissButton: .default(Text("OK")))
+        }
+        .onAppear {
+            if player == nil, let url = project.videoURL {
+                player = AVPlayer(url: url)
+            }
+        }
+        .onChange(of: project.videoURL) { _, newURL in
+            player?.pause()
+            stopWhisperProcessing()
+            transcriptionResult = nil
+            translationResult = nil
+            
+            if let newURL = newURL {
+                let newPlayer = AVPlayer(url: newURL)
+                self.player = newPlayer
+                newPlayer.play()
+            } else {
+                self.player = nil
+            }
         }
     }
     
@@ -171,7 +199,7 @@ struct VideoEditorView: View {
             return
         }
         
-        stopWhisperProcessing()
+	        stopWhisperProcessing()
         
         if isTranslation {
             self.translationResult = ""

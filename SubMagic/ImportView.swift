@@ -33,12 +33,12 @@ struct ImportView: View {
                         .onTapGesture {
                             project.openVideo()
                         }
-                        .onDrop(of: ["public.file-url"], isTargeted: nil) { providers in
-                            project.handleDrop(providers: providers)
-                        }
                 }
                 .padding(40)
             }
+        }
+        .onDrop(of: ["public.file-url"], isTargeted: nil) { providers in
+            project.handleDrop(providers: providers)
         }
         .frame(minWidth: 600, minHeight: 400)
     }
@@ -47,3 +47,4 @@ struct ImportView: View {
 #Preview {
     ImportView()
 }
+

@@ -15,12 +15,6 @@ struct SubMagicApp: App {
         }
         .commands {
             CommandGroup(replacing: .newItem) {}
-            CommandGroup(replacing: .saveItem) {}
-            CommandGroup(replacing: .undoRedo) {}
-        }
-
-        Settings {
-            SettingsView()
         }
     }
 }
