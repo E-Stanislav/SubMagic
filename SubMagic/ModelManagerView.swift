@@ -40,6 +40,17 @@ class WhisperModelManager: ObservableObject {
     }
     
     func downloadModel(_ model: WhisperModel, to directory: URL, completion: @escaping (Bool) -> Void) {
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: nil)
+        } catch {
+            DispatchQueue.main.async {
+                self.error = "Не удалось создать папку для моделей: \(error.localizedDescription)"
+                self.isDownloading = false
+            }
+            completion(false)
+            return
+        }
+
         isDownloading = true
         error = nil
         downloadingModelName = model.name
