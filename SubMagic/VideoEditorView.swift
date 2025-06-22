@@ -374,15 +374,14 @@ struct VideoEditorView: View {
             
             do {
                 try process.run()
+                process.waitUntilExit() // Ждем завершения здесь
+                
+                let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                return String(data: outputData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             } catch {
                 print("[ERROR] Failed to run whisper process: \(error.localizedDescription)")
                 return ""
             }
-            
-            let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            
-            return String(data: outputData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         }.value
     }
 }

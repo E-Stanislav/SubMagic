@@ -25,6 +25,7 @@ class WhisperModelManager: ObservableObject {
     @Published var error: String? = nil
     @Published var downloadingModelName: String? = nil
     private var currentDownloadTask: URLSessionDownloadTask? = nil
+    private var progressObserver: NSKeyValueObservation?
     
     let availableModels: [WhisperModel] = [
         WhisperModel(name: "tiny",  url: URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin")!,  filename: "ggml-tiny.bin",  sizeMB: 75),
@@ -39,9 +40,11 @@ class WhisperModelManager: ObservableObject {
         UserDefaults.standard.set(path, forKey: "whisperModelPath")
     }
     
-    func downloadModel(_ model: WhisperModel, to directory: URL, completion: @escaping (Bool) -> Void) {
+    func downloadModel(_ model: WhisperModel, completion: @escaping (Bool) -> Void) {
+        let modelsDirectory = getModelsDirectory()
+
         do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: nil)
+            try FileManager.default.createDirectory(at: modelsDirectory, withIntermediateDirectories: true, attributes: nil)
         } catch {
             DispatchQueue.main.async {
                 self.error = "Не удалось создать папку для моделей: \(error.localizedDescription)"
@@ -55,7 +58,7 @@ class WhisperModelManager: ObservableObject {
         error = nil
         downloadingModelName = model.name
         downloadProgress = 0
-        let destination = directory.appendingPathComponent(model.filename)
+        let destination = modelsDirectory.appendingPathComponent(model.filename)
         var request = URLRequest(url: model.url)
         // Добавляем user-agent, как у браузера, чтобы HuggingFace не блокировал
         request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.1 Safari/605.1.15", forHTTPHeaderField: "User-Agent")
@@ -64,8 +67,11 @@ class WhisperModelManager: ObservableObject {
                 self.isDownloading = false
                 self.downloadingModelName = nil
                 self.currentDownloadTask = nil
+                self.progressObserver = nil
                 if let url = url {
                     do {
+                        // Еще раз проверяем наличие папки перед перемещением
+                        try FileManager.default.createDirectory(at: modelsDirectory, withIntermediateDirectories: true, attributes: nil)
                         try FileManager.default.moveItem(at: url, to: destination)
                         self.setModelPath(destination.path)
                         completion(true)
@@ -84,7 +90,7 @@ class WhisperModelManager: ObservableObject {
             }
         }
         self.currentDownloadTask = task
-        _ = task.progress.observe(\.fractionCompleted) { progress, _ in
+        self.progressObserver = task.progress.observe(\.fractionCompleted) { progress, _ in
             DispatchQueue.main.async {
                 self.downloadProgress = progress.fractionCompleted
             }
@@ -96,6 +102,12 @@ class WhisperModelManager: ObservableObject {
         isDownloading = false
         downloadingModelName = nil
         currentDownloadTask = nil
+        progressObserver = nil
+    }
+    func getModelsDirectory() -> URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = appSupport.appendingPathComponent("SubMagic/models")
+        return dir
     }
 }
 
@@ -107,16 +119,14 @@ struct ModelManagerView: View {
     @State private var downloadedModels: [URL] = []
     @State private var activeModelPath: String? = UserDefaults.standard.string(forKey: "whisperModelPath")
     
-    // Папка для моделей внутри Application Support
     private var modelsDirectory: URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = appSupport.appendingPathComponent("SubMagic/models", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
+        modelManager.getModelsDirectory()
     }
     
     private func refreshDownloadedModels() {
-        let urls = (try? FileManager.default.contentsOfDirectory(at: modelsDirectory, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
+        let directory = modelsDirectory
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: nil)
+        let urls = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
         downloadedModels = urls.filter { $0.pathExtension == "bin" }
     }
     
@@ -151,8 +161,13 @@ struct ModelManagerView: View {
                         .frame(width: 200)
                         Button {
                             if let model = selectedModel {
-                                modelManager.downloadModel(model, to: modelsDirectory) { _ in
-                                    refreshDownloadedModels()
+                                modelManager.downloadModel(model) { success in
+                                    if success {
+                                        refreshDownloadedModels()
+                                        if let modelPath = modelManager.modelPath {
+                                            activeModelPath = modelPath
+                                        }
+                                    }
                                 }
                             }
                         } label: {
@@ -246,13 +261,10 @@ struct ModelManagerView: View {
             .padding(.bottom, 24)
             .onAppear {
                 refreshDownloadedModels()
-                activeModelPath = modelManager.modelPath
+                activeModelPath = UserDefaults.standard.string(forKey: "whisperModelPath")
             }
             .onChange(of: modelManager.modelPath) { _, newPath in
                 activeModelPath = newPath
-            }
-            .onChange(of: modelManager.isDownloading) { _, _ in
-                refreshDownloadedModels()
             }
         }
         .fileImporter(isPresented: $showFilePicker, allowedContentTypes: [.data], allowsMultipleSelection: false) { result in
@@ -260,9 +272,6 @@ struct ModelManagerView: View {
                 modelManager.setModelPath(url.path)
                 refreshDownloadedModels()
             }
-        }
-        .onChange(of: modelManager.isDownloading) { _, downloading in
-            showStatusBar = downloading
         }
         if showStatusBar, modelManager.isDownloading {
             WhisperDownloadStatusBar(progress: modelManager.downloadProgress, modelName: modelManager.downloadingModelName)
