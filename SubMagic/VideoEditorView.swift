@@ -54,10 +54,17 @@ struct VideoEditorView: View {
     }
     
     var body: some View {
-        VStack {
-            Text("Редактор видео и субтитров")
-                .font(.title)
+        VStack(spacing: 0) {
+            // Динамический заголовок
+            Text(project.videoURL?.lastPathComponent ?? "Редактор")
+                .font(.title2.bold())
+                .foregroundColor(.secondary)
                 .padding()
+                .frame(maxWidth: .infinity)
+                .background(.bar)
+
+            Divider()
+
             if let player = player {
                 ZStack {
                     VideoPlayer(player: player)

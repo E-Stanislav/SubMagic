@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct ImportView: View {
-    @StateObject private var project = ProjectModel()
+    @ObservedObject var project: ProjectModel
     
     var body: some View {
         Group {
@@ -45,6 +45,6 @@ struct ImportView: View {
 }
 
 #Preview {
-    ImportView()
+    ImportView(project: ProjectModel())
 }
 
