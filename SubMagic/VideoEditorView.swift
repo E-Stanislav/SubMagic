@@ -20,6 +20,14 @@ struct VideoEditorView: View {
     @State private var fullScreenWindowController: FullScreenWindowController? = nil
     @State private var showExportLanguagePicker = false
     @State private var selectedExportLanguage: String = "ru"
+    @State private var showExportModelPicker = false
+    @State private var selectedExportModel: String = ""
+    let availableModels: [(path: String, name: String, speed: String)] = [
+        ("/Users/stanislave/Documents/Projects/SubMagic/SubMagic/bin/ggml-base.en.bin", "base (быстро, менее точно)", "fast"),
+        ("/Users/stanislave/Documents/Projects/SubMagic/SubMagic/bin/ggml-small.en.bin", "small (быстро, средняя точность)", "fast"),
+        ("/Users/stanislave/Library/Application Support/SubMagic/models/ggml-medium.bin", "medium (медленнее, точнее)", "accurate"),
+        ("/Users/stanislave/Library/Application Support/SubMagic/models/ggml-large-v3.bin", "large (самый медленный, максимальная точность)", "accurate")
+    ]
     var body: some View {
         VStack(spacing: 0) {
             // Динамический заголовок
@@ -117,7 +125,7 @@ struct VideoEditorView: View {
                     if ((transcriptionState.transcriptionResult != nil && !transcriptionState.transcriptionResult!.isEmpty) || (transcriptionState.translationResult != nil && !transcriptionState.translationResult!.isEmpty)) {
                         Button("Экспорт субтитров") {
                             selectedExportLanguage = "ru"
-                            showExportLanguagePicker = true
+                            showExportModelPicker = true
                         }
                     }
                     Spacer()
@@ -173,12 +181,41 @@ struct VideoEditorView: View {
                 transcriptionState.player = nil
             }
         }
+        .popover(isPresented: $showExportModelPicker, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Выберите модель для экспорта")
+                    .font(.headline)
+                Picker("Модель", selection: $selectedExportModel) {
+                    ForEach(availableModels, id: \.path) { model in
+                        let exists = FileManager.default.fileExists(atPath: model.path)
+                        let displayName = exists ? model.name : model.name + " (не скачана, скачайте в настройках)"
+                        Text(displayName).tag(model.path)
+                    }
+                }
+                .pickerStyle(MenuPickerStyle())
+                Text("base/small — быстро, но менее точно. medium/large — медленно, но точнее.")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+                HStack {
+                    Spacer()
+                    Button("Отмена") { showExportModelPicker = false }
+                    Button("Далее") {
+                        showExportModelPicker = false
+                        showExportLanguagePicker = true
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!FileManager.default.fileExists(atPath: selectedExportModel))
+                }
+            }
+            .padding()
+            .frame(width: 350)
+        }
         .popover(isPresented: $showExportLanguagePicker, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Выберите язык субтитров")
                     .font(.headline)
                 Picker("Язык", selection: $selectedExportLanguage) {
-                    ForEach(supportedLanguages, id: \ .code) { lang in
+                    ForEach(supportedLanguages, id: \.code) { lang in
                         Text(lang.name).tag(lang.code)
                     }
                 }
@@ -189,7 +226,7 @@ struct VideoEditorView: View {
                     Button("Экспортировать") {
                         transcriptionState.selectedLanguage = selectedExportLanguage
                         showExportLanguagePicker = false
-                        exportSubtitles()
+                        exportSubtitles(selectedModelPath: selectedExportModel)
                     }
                     .keyboardShortcut(.defaultAction)
                 }
@@ -496,7 +533,7 @@ struct VideoEditorView: View {
         return nil
     }
 
-    private func exportSubtitles() {
+    private func exportSubtitles(selectedModelPath: String? = nil) {
         let panel = NSSavePanel()
         panel.title = "Экспорт субтитров"
         panel.allowedFileTypes = ["srt"]
@@ -509,7 +546,7 @@ struct VideoEditorView: View {
                 transcriptionState.lastError = "Не найден бинарник whisper-cli"
                 return
             }
-            var modelPath = UserDefaults.standard.string(forKey: "whisperModelPath") ?? ""
+            var modelPath = selectedModelPath ?? UserDefaults.standard.string(forKey: "whisperModelPath") ?? ""
             if modelPath.isEmpty || !FileManager.default.fileExists(atPath: modelPath) {
                 if let bundleModelPath = Bundle.main.path(forResource: "ggml-base.en", ofType: "bin") {
                     modelPath = bundleModelPath
@@ -526,7 +563,8 @@ struct VideoEditorView: View {
             let language = transcriptionState.selectedLanguage
             let isTranslation = (transcriptionState.translationResult != nil && !transcriptionState.translationResult!.isEmpty)
             let baseOutput = saveURL.deletingPathExtension().path
-            // Новый код: извлекаем всю аудиодорожку
+            let segmentDuration: Double = 600 // 10 минут
+            let cpuCores = ProcessInfo.processInfo.activeProcessorCount
             transcriptionState.exportStatus = "Извлечение аудиодорожки из видео..."
             Task {
                 let asset = AVURLAsset(url: videoURL)
@@ -547,54 +585,89 @@ struct VideoEditorView: View {
                     }
                     return
                 }
-                DispatchQueue.main.async {
-                    transcriptionState.exportStatus = "Экспорт субтитров..."
+                // Разбиваем аудио на сегменты
+                let segmentCount = Int(ceil(durationInSeconds / segmentDuration))
+                var segmentURLs: [URL] = []
+                for i in 0..<segmentCount {
+                    let start = Double(i) * segmentDuration
+                    let end = min(start + segmentDuration, durationInSeconds)
+                    if end - start < 1.0 { continue }
+                    let segURL = FileManager.default.temporaryDirectory.appendingPathComponent("segment_\(i)_\(UUID().uuidString).wav")
+                    let ok = await extractAudioSegment(from: tempWavURL, to: segURL, startTime: start, endTime: end)
+                    let fileSize = (try? FileManager.default.attributesOfItem(atPath: segURL.path)[.size] as? Int) ?? 0
+                    print("[DEBUG] Сегмент #\(i): \(segURL.lastPathComponent), размер: \(fileSize) байт, ok=\(ok)")
+                    if ok && fileSize > 1000 { segmentURLs.append(segURL) } else { try? FileManager.default.removeItem(at: segURL) }
                 }
-                var args = ["--file", tempWavURL.path, "--model", modelPath, "--language", language, "-osrt", "-of", baseOutput]
-                if isTranslation { args.append("--translate") }
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let process = Process()
-                    process.executableURL = URL(fileURLWithPath: whisperPath)
-                    process.arguments = args
-                    let errorPipe = Pipe()
-                    process.standardError = errorPipe
-                    do {
-                        try process.run()
-                        process.waitUntilExit()
-                        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-                        let errorStr = String(data: errorData, encoding: .utf8) ?? ""
-                        let srtPath = baseOutput + ".srt"
-                        if process.terminationStatus == 0, FileManager.default.fileExists(atPath: srtPath) {
-                            do {
-                                if saveURL.path != srtPath {
-                                    if FileManager.default.fileExists(atPath: saveURL.path) {
-                                        try FileManager.default.removeItem(at: saveURL)
-                                    }
-                                    try FileManager.default.moveItem(atPath: srtPath, toPath: saveURL.path)
-                                }
-                                DispatchQueue.main.async {
-                                    transcriptionState.exportStatus = nil
-                                }
-                            } catch {
-                                DispatchQueue.main.async {
-                                    transcriptionState.exportStatus = nil
-                                    transcriptionState.lastError = "Ошибка сохранения файла: \(error.localizedDescription)"
-                                }
+                if segmentURLs.isEmpty {
+                    DispatchQueue.main.async {
+                        transcriptionState.exportStatus = nil
+                        transcriptionState.lastError = "Не удалось создать ни одного валидного сегмента для экспорта."
+                    }
+                    try? FileManager.default.removeItem(at: tempWavURL)
+                    return
+                }
+                DispatchQueue.main.async {
+                    transcriptionState.exportStatus = "Экспорт субтитров (ускоренный)..."
+                }
+                // Параллельно запускаем whisper-cli для каждого сегмента
+                let group = DispatchGroup()
+                var srtPaths: [String] = Array(repeating: "", count: segmentURLs.count)
+                for (i, segURL) in segmentURLs.enumerated() {
+                    group.enter()
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        let segOutput = segURL.deletingPathExtension().path
+                        var args = ["--file", segURL.path, "--model", modelPath, "--language", language, "-osrt", "-of", segOutput, "--threads", "\(cpuCores)"]
+                        if isTranslation { args.append("--translate") }
+                        let process = Process()
+                        process.executableURL = URL(fileURLWithPath: whisperPath)
+                        process.arguments = args
+                        let errorPipe = Pipe()
+                        process.standardError = errorPipe
+                        do {
+                            try process.run()
+                            process.waitUntilExit()
+                            let srtPath = segOutput + ".srt"
+                            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                            let errorStr = String(data: errorData, encoding: .utf8) ?? ""
+                            let exists = FileManager.default.fileExists(atPath: srtPath)
+                            print("[DEBUG] Сегмент #\(i): завершён, srt exists=\(exists), error=\(errorStr)")
+                            if process.terminationStatus == 0, exists {
+                                srtPaths[i] = srtPath
+                            }
+                        } catch {
+                            print("[ERROR] Whisper-cli для сегмента #\(i) не запустился: \(error.localizedDescription)")
+                        }
+                        group.leave()
+                    }
+                }
+                group.notify(queue: .main) {
+                    // Объединяем все .srt
+                    let finalSRT = NSMutableString()
+                    var idx = 1
+                    for srtPath in srtPaths where !srtPath.isEmpty {
+                        if let content = try? String(contentsOfFile: srtPath, encoding: .utf8) {
+                            // Перенумеровываем субтитры
+                            let lines = content.components(separatedBy: "\n\n")
+                            for line in lines where !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                let replaced = line.replacingOccurrences(of: "^\\d+", with: "\(idx)", options: .regularExpression)
+                                finalSRT.append(replaced + "\n\n")
+                                idx += 1
                             }
                         } else {
-                            DispatchQueue.main.async {
-                                transcriptionState.exportStatus = nil
-                                transcriptionState.lastError = "Ошибка экспорта: \(errorStr)"
-                            }
+                            print("[DEBUG] Не удалось прочитать srt-файл: \(srtPath)")
                         }
-                        try? FileManager.default.removeItem(at: tempWavURL)
-                    } catch {
-                        DispatchQueue.main.async {
-                            transcriptionState.exportStatus = nil
-                            transcriptionState.lastError = "Ошибка запуска whisper-cli: \(error.localizedDescription)"
-                        }
-                        try? FileManager.default.removeItem(at: tempWavURL)
                     }
+                    do {
+                        try finalSRT.write(toFile: saveURL.path, atomically: true, encoding: String.Encoding.utf8.rawValue)
+                        transcriptionState.exportStatus = nil
+                    } catch {
+                        transcriptionState.exportStatus = nil
+                        transcriptionState.lastError = "Ошибка сохранения итогового файла: \(error.localizedDescription)"
+                    }
+                    // Удаляем временные файлы
+                    try? FileManager.default.removeItem(at: tempWavURL)
+                    for url in segmentURLs { try? FileManager.default.removeItem(at: url) }
+                    for srtPath in srtPaths where !srtPath.isEmpty { try? FileManager.default.removeItem(atPath: srtPath) }
                 }
             }
         }
