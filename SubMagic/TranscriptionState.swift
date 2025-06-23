@@ -11,6 +11,8 @@ class TranscriptionState: ObservableObject {
     @Published var subtitlesHidden: Bool = false
     @Published var lastError: String? = nil
     @Published var exportStatus: String? = nil
+    @Published var exportProgress: Double = 0
+    @Published var exportCompleted: Bool = false
     var videoURL: URL? = nil
     var player: AVPlayer? = nil
     var timeObserverToken: Any?

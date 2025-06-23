@@ -148,13 +148,20 @@ struct VideoEditorView: View {
             Spacer()
             // Статус-бар экспорта субтитров
             if let exportStatus = transcriptionState.exportStatus {
-                HStack {
-                    ProgressView()
-                        .scaleEffect(0.7)
-                        .padding(.trailing, 4)
+                HStack(spacing: 12) {
+                    ProgressView(value: transcriptionState.exportProgress)
+                        .frame(width: 120)
+                    Text(String(format: "%.0f%%", transcriptionState.exportProgress * 100))
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
                     Text(exportStatus)
                         .font(.footnote)
                         .foregroundColor(.secondary)
+                    if transcriptionState.exportCompleted {
+                        Label("Субтитры готовы!", systemImage: "checkmark.seal.fill")
+                            .foregroundColor(.green)
+                            .font(.footnote.bold())
+                    }
                 }
                 .padding(.bottom, 8)
                 .transition(.opacity)
@@ -310,7 +317,7 @@ struct VideoEditorView: View {
         let asset = AVURLAsset(url: videoURL)
         guard let duration = try? await asset.load(.duration) else { return }
         let durationInSeconds = CMTimeGetSeconds(duration)
-        let segmentDuration: Double = 10.0
+        let segmentDuration: Double = 10.0 // 1 минута
 
         print("[DEBUG] Starting processing with language: \(language), isTranslation: \(isTranslation)")
 
@@ -564,7 +571,7 @@ struct VideoEditorView: View {
             let language = transcriptionState.selectedLanguage
             let isTranslation = (transcriptionState.translationResult != nil && !transcriptionState.translationResult!.isEmpty)
             let baseOutput = saveURL.deletingPathExtension().path
-            let segmentDuration: Double = 600 // 10 минут
+            let segmentDuration: Double = 60 // 1 минута
             let cpuCores = ProcessInfo.processInfo.activeProcessorCount
             transcriptionState.exportStatus = "Извлечение аудиодорожки из видео..."
             Task {
@@ -613,8 +620,19 @@ struct VideoEditorView: View {
                 // Параллельно запускаем whisper-cli для каждого сегмента
                 let group = DispatchGroup()
                 var srtPaths: [String] = Array(repeating: "", count: segmentURLs.count)
+                var completedSegments = 0
+                DispatchQueue.main.async {
+                    transcriptionState.exportProgress = 0
+                    transcriptionState.exportCompleted = false
+                }
                 for (i, segURL) in segmentURLs.enumerated() {
                     group.enter()
+                    DispatchQueue.main.async {
+                        // Промежуточный прогресс при старте обработки сегмента
+                        let startedSegments = i + 1
+                        print("[PROGRESS] startedSegments = \(startedSegments), total = \(segmentURLs.count)")
+                        transcriptionState.exportProgress = max(transcriptionState.exportProgress, Double(startedSegments - 1) / Double(segmentURLs.count))
+                    }
                     DispatchQueue.global(qos: .userInitiated).async {
                         let segOutput = segURL.deletingPathExtension().path
                         var args = ["--file", segURL.path, "--model", modelPath, "--language", language, "-osrt", "-of", segOutput, "--threads", "\(cpuCores)"]
@@ -637,6 +655,11 @@ struct VideoEditorView: View {
                             }
                         } catch {
                             print("[ERROR] Whisper-cli для сегмента #\(i) не запустился: \(error.localizedDescription)")
+                        }
+                        DispatchQueue.main.async {
+                            completedSegments += 1
+                            print("[PROGRESS] completedSegments = \(completedSegments), total = \(segmentURLs.count)")
+                            transcriptionState.exportProgress = Double(completedSegments) / Double(segmentURLs.count)
                         }
                         group.leave()
                     }
@@ -661,14 +684,21 @@ struct VideoEditorView: View {
                     do {
                         try finalSRT.write(toFile: saveURL.path, atomically: true, encoding: String.Encoding.utf8.rawValue)
                         transcriptionState.exportStatus = nil
+                        transcriptionState.exportProgress = 1
+                        transcriptionState.exportCompleted = true
                     } catch {
                         transcriptionState.exportStatus = nil
                         transcriptionState.lastError = "Ошибка сохранения итогового файла: \(error.localizedDescription)"
+                        transcriptionState.exportCompleted = false
                     }
                     // Удаляем временные файлы
                     try? FileManager.default.removeItem(at: tempWavURL)
                     for url in segmentURLs { try? FileManager.default.removeItem(at: url) }
                     for srtPath in srtPaths where !srtPath.isEmpty { try? FileManager.default.removeItem(atPath: srtPath) }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        transcriptionState.exportCompleted = false
+                        transcriptionState.exportProgress = 0
+                    }
                 }
             }
         }
