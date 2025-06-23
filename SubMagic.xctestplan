@@ -1,0 +1,37 @@
+{
+  "configurations" : [
+    {
+      "id" : "53FB6E08-C3E6-4570-80A5-A75D0F1A5722",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:SubMagic.xcodeproj",
+      "identifier" : "05BC20772E068AB100F63687",
+      "name" : "SubMagic"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:SubMagic.xcodeproj",
+        "identifier" : "05BC20852E068AB100F63687",
+        "name" : "SubMagicTests"
+      }
+    },
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:SubMagic.xcodeproj",
+        "identifier" : "05BC208F2E068AB100F63687",
+        "name" : "SubMagicUITests"
+      }
+    }
+  ],
+  "version" : 1
+}
