@@ -28,28 +28,33 @@ struct VideoEditorView: View {
     
     private func getWhisperPath() -> String? {
         // Сначала пробуем найти в bundle (для production)
-        if let bundlePath = Bundle.main.path(forResource: "whisper-cli", ofType: nil, inDirectory: "bin") {
+        if let bundlePath = Bundle.main.path(forResource: "whisper-cli", ofType: nil, inDirectory: nil) {
+            print("[DEBUG] Found whisper-cli in bundle: \(bundlePath)")
             return bundlePath
         }
         
         // Затем пробуем абсолютный путь к новому бинарю (для development)
         let developmentPath = "/Users/stanislave/Documents/Projects/SubMagic/SubMagic/bin/whisper-cli"
         if FileManager.default.fileExists(atPath: developmentPath) {
+            print("[DEBUG] Found whisper-cli in development path: \(developmentPath)")
             return developmentPath
         }
         
         // Fallback к старому бинарю (если новый не найден)
         let oldDevelopmentPath = "/Users/stanislave/Documents/Projects/SubMagic/SubMagic/bin/whisper"
         if FileManager.default.fileExists(atPath: oldDevelopmentPath) {
+            print("[DEBUG] Found old whisper in development path: \(oldDevelopmentPath)")
             return oldDevelopmentPath
         }
         
         // Наконец, пробуем UserDefaults (если пользователь указал свой путь)
         if let userPath = UserDefaults.standard.string(forKey: "whisperPath"),
            FileManager.default.fileExists(atPath: userPath) {
+            print("[DEBUG] Found whisper in user path: \(userPath)")
             return userPath
         }
         
+        print("[ERROR] Whisper binary not found in any location")
         return nil
     }
     
@@ -77,11 +82,10 @@ struct VideoEditorView: View {
                         Spacer()
                         if let text = transcriptionResult ?? translationResult, !text.isEmpty {
                             Text(text)
-                                .font(.title)
                                 .foregroundColor(.white)
                                 .padding()
-                                .background(Color.black.opacity(0.6))
-                                .cornerRadius(10)
+                                .background(Color.black.opacity(0.5))
+                                .cornerRadius(8)
                                 .padding(.bottom, 50)
                                 .transition(.opacity.animation(.easeInOut))
                         }
@@ -147,12 +151,6 @@ struct VideoEditorView: View {
             fullScreenWindowController?.close()
             fullScreenWindowController = nil
         }
-        .alert(isPresented: Binding<Bool>(
-            get: { translationResult != nil },
-            set: { if !$0 { translationResult = nil } }
-        )) {
-            Alert(title: Text("Результат перевода"), message: Text(translationResult ?? ""), dismissButton: .default(Text("OK")))
-        }
         .onAppear {
             if player == nil, let url = project.videoURL {
                 player = AVPlayer(url: url)
@@ -206,7 +204,7 @@ struct VideoEditorView: View {
             return
         }
         
-	        stopWhisperProcessing()
+        stopWhisperProcessing()
         
         if isTranslation {
             self.translationResult = ""
@@ -216,16 +214,41 @@ struct VideoEditorView: View {
             self.translationResult = nil
         }
 
-        guard let whisperPath = getWhisperPath() else { return }
-        let modelPath = UserDefaults.standard.string(forKey: "whisperModelPath") ?? ""
+        guard let whisperPath = getWhisperPath() else { 
+            print("[ERROR] Whisper binary not found")
+            return 
+        }
+        
+        print("[DEBUG] Using whisper binary: \(whisperPath)")
+        
+        // Получаем путь к модели - сначала из UserDefaults, затем из папки bin
+        var modelPath = UserDefaults.standard.string(forKey: "whisperModelPath") ?? ""
         if modelPath.isEmpty || !FileManager.default.fileExists(atPath: modelPath) {
-            return
+            // Пробуем найти модель в bundle приложения
+            if let bundleModelPath = Bundle.main.path(forResource: "ggml-base.en", ofType: "bin") {
+                modelPath = bundleModelPath
+                print("[DEBUG] Using model from app bundle: \(modelPath)")
+            } else {
+                // Пробуем найти модель в папке bin
+                let binModelPath = "/Users/stanislave/Documents/Projects/SubMagic/SubMagic/bin/ggml-base.en.bin"
+                if FileManager.default.fileExists(atPath: binModelPath) {
+                    modelPath = binModelPath
+                    print("[DEBUG] Using model from bin directory: \(modelPath)")
+                } else {
+                    print("[ERROR] Model file not found. Please download a model in Settings.")
+                    return
+                }
+            }
+        } else {
+            print("[DEBUG] Using model from UserDefaults: \(modelPath)")
         }
 
         let asset = AVURLAsset(url: videoURL)
         guard let duration = try? await asset.load(.duration) else { return }
         let durationInSeconds = CMTimeGetSeconds(duration)
         let segmentDuration: Double = 10.0
+
+        print("[DEBUG] Starting processing with language: \(language), isTranslation: \(isTranslation)")
 
         timeObserverToken = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1.0, preferredTimescale: 600), queue: .main) { [self] _ in
             guard let currentTime = self.player?.currentTime().seconds, currentTime < durationInSeconds else { return }
@@ -366,6 +389,11 @@ struct VideoEditorView: View {
     
     func processAudioSegment(_ audioURL: URL, whisperPath: String, modelPath: String, language: String, isTranslation: Bool) async -> String {
         await Task.detached(priority: .userInitiated) {
+            print("[DEBUG] Processing audio segment: \(audioURL.path)")
+            print("[DEBUG] Whisper path: \(whisperPath)")
+            print("[DEBUG] Model path: \(modelPath)")
+            print("[DEBUG] Language: \(language), isTranslation: \(isTranslation)")
+            
             let process = Process()
             process.executableURL = URL(fileURLWithPath: whisperPath)
             
@@ -376,15 +404,29 @@ struct VideoEditorView: View {
             
             process.arguments = arguments
             
+            print("[DEBUG] Whisper command: \(whisperPath) \(arguments.joined(separator: " "))")
+            
             let outputPipe = Pipe()
+            let errorPipe = Pipe()
             process.standardOutput = outputPipe
+            process.standardError = errorPipe
             
             do {
                 try process.run()
                 process.waitUntilExit() // Ждем завершения здесь
                 
                 let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-                return String(data: outputData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                
+                let output = String(data: outputData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let error = String(data: errorData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                
+                if !error.isEmpty {
+                    print("[ERROR] Whisper stderr: \(error)")
+                }
+                
+                print("[DEBUG] Whisper output: '\(output)'")
+                return output
             } catch {
                 print("[ERROR] Failed to run whisper process: \(error.localizedDescription)")
                 return ""
