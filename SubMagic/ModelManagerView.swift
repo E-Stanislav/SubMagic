@@ -163,7 +163,7 @@ struct ModelManagerView: View {
                             if let model = selectedModel {
                                 modelManager.downloadModel(model) { success in
                                     if success {
-                                        refreshDownloadedModels()
+                                    refreshDownloadedModels()
                                         if let modelPath = modelManager.modelPath {
                                             activeModelPath = modelPath
                                         }

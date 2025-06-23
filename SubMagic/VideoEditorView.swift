@@ -18,6 +18,8 @@ struct VideoEditorView: View {
     @State private var showFullScreen = false
     @FocusState private var isVideoFocused: Bool
     @State private var fullScreenWindowController: FullScreenWindowController? = nil
+    @State private var showExportLanguagePicker = false
+    @State private var selectedExportLanguage: String = "ru"
     var body: some View {
         VStack(spacing: 0) {
             // Динамический заголовок
@@ -54,8 +56,16 @@ struct VideoEditorView: View {
                                     .background(Color.red.opacity(0.8))
                                     .cornerRadius(8)
                                     .padding(.bottom, 60)
-                                Button("Скрыть ошибку") {
-                                    transcriptionState.lastError = nil
+                                HStack(spacing: 16) {
+                                    Button("Скрыть ошибку") {
+                                        transcriptionState.lastError = nil
+                                    }
+                                    Button("Скопировать ошибку") {
+                                        #if os(macOS)
+                                        NSPasteboard.general.clearContents()
+                                        NSPasteboard.general.setString(error, forType: .string)
+                                        #endif
+                                    }
                                 }
                                 .padding(.bottom, 40)
                             }
@@ -104,6 +114,12 @@ struct VideoEditorView: View {
                             transcriptionState.subtitlesHidden = true
                         }
                     }
+                    if ((transcriptionState.transcriptionResult != nil && !transcriptionState.transcriptionResult!.isEmpty) || (transcriptionState.translationResult != nil && !transcriptionState.translationResult!.isEmpty)) {
+                        Button("Экспорт субтитров") {
+                            selectedExportLanguage = "ru"
+                            showExportLanguagePicker = true
+                        }
+                    }
                     Spacer()
                     Button(role: .destructive) {
                         project.closeProject()
@@ -121,6 +137,19 @@ struct VideoEditorView: View {
                     }
             }
             Spacer()
+            // Статус-бар экспорта субтитров
+            if let exportStatus = transcriptionState.exportStatus {
+                HStack {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .padding(.trailing, 4)
+                    Text(exportStatus)
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.bottom, 8)
+                .transition(.opacity)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .closeMedia)) { _ in
             fullScreenWindowController?.close()
@@ -143,6 +172,30 @@ struct VideoEditorView: View {
             } else {
                 transcriptionState.player = nil
             }
+        }
+        .popover(isPresented: $showExportLanguagePicker, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Выберите язык субтитров")
+                    .font(.headline)
+                Picker("Язык", selection: $selectedExportLanguage) {
+                    ForEach(supportedLanguages, id: \ .code) { lang in
+                        Text(lang.name).tag(lang.code)
+                    }
+                }
+                .pickerStyle(MenuPickerStyle())
+                HStack {
+                    Spacer()
+                    Button("Отмена") { showExportLanguagePicker = false }
+                    Button("Экспортировать") {
+                        transcriptionState.selectedLanguage = selectedExportLanguage
+                        showExportLanguagePicker = false
+                        exportSubtitles()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding()
+            .frame(width: 300)
         }
     }
     private func openFullScreen(player: AVPlayer) {
@@ -441,6 +494,110 @@ struct VideoEditorView: View {
         }
         print("[ERROR] Whisper binary not found in any location")
         return nil
+    }
+
+    private func exportSubtitles() {
+        let panel = NSSavePanel()
+        panel.title = "Экспорт субтитров"
+        panel.allowedFileTypes = ["srt"]
+        panel.nameFieldStringValue = (project.videoURL?.deletingPathExtension().lastPathComponent ?? "subtitles") + ".srt"
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.begin { response in
+            guard response == .OK, let saveURL = panel.url, let videoURL = project.videoURL else { return }
+            guard let whisperPath = getWhisperPath() else {
+                transcriptionState.lastError = "Не найден бинарник whisper-cli"
+                return
+            }
+            var modelPath = UserDefaults.standard.string(forKey: "whisperModelPath") ?? ""
+            if modelPath.isEmpty || !FileManager.default.fileExists(atPath: modelPath) {
+                if let bundleModelPath = Bundle.main.path(forResource: "ggml-base.en", ofType: "bin") {
+                    modelPath = bundleModelPath
+                } else {
+                    let binModelPath = "/Users/stanislave/Documents/Projects/SubMagic/SubMagic/bin/ggml-base.en.bin"
+                    if FileManager.default.fileExists(atPath: binModelPath) {
+                        modelPath = binModelPath
+                    } else {
+                        transcriptionState.lastError = "Не найден файл модели. Скачайте модель в настройках."
+                        return
+                    }
+                }
+            }
+            let language = transcriptionState.selectedLanguage
+            let isTranslation = (transcriptionState.translationResult != nil && !transcriptionState.translationResult!.isEmpty)
+            let baseOutput = saveURL.deletingPathExtension().path
+            // Новый код: извлекаем всю аудиодорожку
+            transcriptionState.exportStatus = "Извлечение аудиодорожки из видео..."
+            Task {
+                let asset = AVURLAsset(url: videoURL)
+                guard let duration = try? await asset.load(.duration) else {
+                    DispatchQueue.main.async {
+                        transcriptionState.exportStatus = nil
+                        transcriptionState.lastError = "Не удалось получить длительность видео."
+                    }
+                    return
+                }
+                let durationInSeconds = CMTimeGetSeconds(duration)
+                let tempWavURL = FileManager.default.temporaryDirectory.appendingPathComponent("export_audio_\(UUID().uuidString).wav")
+                let audioExtracted = await extractAudioSegment(from: videoURL, to: tempWavURL, startTime: 0, endTime: durationInSeconds)
+                guard audioExtracted else {
+                    DispatchQueue.main.async {
+                        transcriptionState.exportStatus = nil
+                        transcriptionState.lastError = "Не удалось извлечь аудиодорожку из видео."
+                    }
+                    return
+                }
+                DispatchQueue.main.async {
+                    transcriptionState.exportStatus = "Экспорт субтитров..."
+                }
+                var args = ["--file", tempWavURL.path, "--model", modelPath, "--language", language, "-osrt", "-of", baseOutput]
+                if isTranslation { args.append("--translate") }
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let process = Process()
+                    process.executableURL = URL(fileURLWithPath: whisperPath)
+                    process.arguments = args
+                    let errorPipe = Pipe()
+                    process.standardError = errorPipe
+                    do {
+                        try process.run()
+                        process.waitUntilExit()
+                        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                        let errorStr = String(data: errorData, encoding: .utf8) ?? ""
+                        let srtPath = baseOutput + ".srt"
+                        if process.terminationStatus == 0, FileManager.default.fileExists(atPath: srtPath) {
+                            do {
+                                if saveURL.path != srtPath {
+                                    if FileManager.default.fileExists(atPath: saveURL.path) {
+                                        try FileManager.default.removeItem(at: saveURL)
+                                    }
+                                    try FileManager.default.moveItem(atPath: srtPath, toPath: saveURL.path)
+                                }
+                                DispatchQueue.main.async {
+                                    transcriptionState.exportStatus = nil
+                                }
+                            } catch {
+                                DispatchQueue.main.async {
+                                    transcriptionState.exportStatus = nil
+                                    transcriptionState.lastError = "Ошибка сохранения файла: \(error.localizedDescription)"
+                                }
+                            }
+                        } else {
+                            DispatchQueue.main.async {
+                                transcriptionState.exportStatus = nil
+                                transcriptionState.lastError = "Ошибка экспорта: \(errorStr)"
+                            }
+                        }
+                        try? FileManager.default.removeItem(at: tempWavURL)
+                    } catch {
+                        DispatchQueue.main.async {
+                            transcriptionState.exportStatus = nil
+                            transcriptionState.lastError = "Ошибка запуска whisper-cli: \(error.localizedDescription)"
+                        }
+                        try? FileManager.default.removeItem(at: tempWavURL)
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -10,7 +10,7 @@ import SwiftUI
 struct ImportView: View {
     @ObservedObject var project: ProjectModel
     @StateObject private var transcriptionState = TranscriptionState()
-    
+
     var body: some View {
         Group {
             if project.videoURL != nil {
@@ -23,7 +23,7 @@ struct ImportView: View {
                     
                     Text("Перетащите видеофайл сюда или нажмите, чтобы выбрать")
                         .font(.title2)
-                        .foregroundColor(.secondary)
+                    .foregroundColor(.secondary)
                         .padding()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(
@@ -33,7 +33,7 @@ struct ImportView: View {
                         )
                         .onTapGesture {
                             project.openVideo()
-                        }
+            }
                 }
                 .padding(40)
             }
