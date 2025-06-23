@@ -36,7 +36,7 @@ struct VideoEditorView: View {
                         }
                     VStack {
                         Spacer()
-                        if let text = transcriptionState.transcriptionResult ?? transcriptionState.translationResult, !text.isEmpty {
+                        if !transcriptionState.subtitlesHidden, let text = transcriptionState.transcriptionResult ?? transcriptionState.translationResult, !text.isEmpty {
                             Text(text)
                                 .foregroundColor(.white)
                                 .padding()
@@ -60,9 +60,11 @@ struct VideoEditorView: View {
                 .background(KeyboardShortcutCatcher(openFullScreen: { openFullScreen(player: player) }))
                 HStack {
                     Button("Транскрибировать") {
+                        transcriptionState.subtitlesHidden = false
                         Task { await transcribeWithWhisper() }
                     }
                     Button("Перевести") {
+                        transcriptionState.subtitlesHidden = false
                         transcriptionState.isTranslating.toggle()
                     }
                     .popover(isPresented: $transcriptionState.isTranslating, arrowEdge: .bottom) {
@@ -74,11 +76,17 @@ struct VideoEditorView: View {
                             }
                             .pickerStyle(MenuPickerStyle())
                             Button("Начать перевод") {
+                                transcriptionState.subtitlesHidden = false
                                 Task { await translateWithWhisper(targetLanguage: transcriptionState.selectedLanguage) }
                                 transcriptionState.isTranslating = false
                             }
                         }
                         .padding()
+                    }
+                    if ((transcriptionState.transcriptionResult != nil && !transcriptionState.transcriptionResult!.isEmpty) || (transcriptionState.translationResult != nil && !transcriptionState.translationResult!.isEmpty)) && !transcriptionState.subtitlesHidden {
+                        Button("Скрыть субтитры") {
+                            transcriptionState.subtitlesHidden = true
+                        }
                     }
                     Spacer()
                     Button(role: .destructive) {

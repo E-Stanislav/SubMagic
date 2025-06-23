@@ -8,6 +8,7 @@ class TranscriptionState: ObservableObject {
     @Published var processedSegments = Set<Int>()
     @Published var selectedLanguage: String = "en"
     @Published var selectedTargetLanguage: String = "en"
+    @Published var subtitlesHidden: Bool = false
     var videoURL: URL? = nil
     var player: AVPlayer? = nil
     var timeObserverToken: Any?
