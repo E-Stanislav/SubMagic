@@ -9,11 +9,12 @@ import SwiftUI
 
 struct ImportView: View {
     @ObservedObject var project: ProjectModel
+    @StateObject private var transcriptionState = TranscriptionState()
     
     var body: some View {
         Group {
             if project.videoURL != nil {
-                VideoEditorView(project: project)
+                VideoEditorView(project: project, transcriptionState: transcriptionState)
             } else {
                 VStack(spacing: 20) {
                     Text("SubMagic")
@@ -36,6 +37,9 @@ struct ImportView: View {
                 }
                 .padding(40)
             }
+        }
+        .onChange(of: project.videoURL) { _, newURL in
+            transcriptionState.setVideo(url: newURL)
         }
         .onDrop(of: ["public.file-url"], isTargeted: nil) { providers in
             project.handleDrop(providers: providers)

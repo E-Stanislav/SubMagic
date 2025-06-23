@@ -11,53 +11,13 @@ import AVFoundation
 
 struct VideoEditorView: View {
     @ObservedObject var project: ProjectModel
-    @State private var player: AVPlayer?
-    @State private var transcriptionResult: String?
-    @State private var translationResult: String?
-    @State private var isTranslating = false
-    @State private var selectedLanguage: String = "en"
-    @State private var timeObserverToken: Any?
-    @State private var processedSegments = Set<Int>()
-    @State private var showFullScreen = false
-    @FocusState private var isVideoFocused: Bool
-    @State private var fullScreenWindowController: FullScreenWindowController? = nil
-    @State private var selectedTargetLanguage: String = "en"
+    @ObservedObject var transcriptionState: TranscriptionState
     let supportedLanguages: [(code: String, name: String)] = [
         ("en", "Английский"), ("ru", "Русский"), ("de", "Немецкий"), ("fr", "Французский"), ("es", "Испанский"), ("zh", "Китайский"), ("ja", "Японский"), ("it", "Итальянский"), ("tr", "Турецкий")
     ]
-    
-    private func getWhisperPath() -> String? {
-        // Сначала пробуем найти в bundle (для production)
-        if let bundlePath = Bundle.main.path(forResource: "whisper-cli", ofType: nil, inDirectory: nil) {
-            print("[DEBUG] Found whisper-cli in bundle: \(bundlePath)")
-            return bundlePath
-        }
-        
-        // Затем пробуем абсолютный путь к новому бинарю (для development)
-        let developmentPath = "/Users/stanislave/Documents/Projects/SubMagic/SubMagic/bin/whisper-cli"
-        if FileManager.default.fileExists(atPath: developmentPath) {
-            print("[DEBUG] Found whisper-cli in development path: \(developmentPath)")
-            return developmentPath
-        }
-        
-        // Fallback к старому бинарю (если новый не найден)
-        let oldDevelopmentPath = "/Users/stanislave/Documents/Projects/SubMagic/SubMagic/bin/whisper"
-        if FileManager.default.fileExists(atPath: oldDevelopmentPath) {
-            print("[DEBUG] Found old whisper in development path: \(oldDevelopmentPath)")
-            return oldDevelopmentPath
-        }
-        
-        // Наконец, пробуем UserDefaults (если пользователь указал свой путь)
-        if let userPath = UserDefaults.standard.string(forKey: "whisperPath"),
-           FileManager.default.fileExists(atPath: userPath) {
-            print("[DEBUG] Found whisper in user path: \(userPath)")
-            return userPath
-        }
-        
-        print("[ERROR] Whisper binary not found in any location")
-        return nil
-    }
-    
+    @State private var showFullScreen = false
+    @FocusState private var isVideoFocused: Bool
+    @State private var fullScreenWindowController: FullScreenWindowController? = nil
     var body: some View {
         VStack(spacing: 0) {
             // Динамический заголовок
@@ -67,20 +27,16 @@ struct VideoEditorView: View {
                 .padding()
                 .frame(maxWidth: .infinity)
                 .background(.bar)
-
             Divider()
-
-            if let player = player {
+            if let player = transcriptionState.player {
                 ZStack {
                     VideoPlayer(player: player)
                         .onAppear {
                             player.play()
                         }
-                    
-                    // Отображение субтитров поверх видео
                     VStack {
                         Spacer()
-                        if let text = transcriptionResult ?? translationResult, !text.isEmpty {
+                        if let text = transcriptionState.transcriptionResult ?? transcriptionState.translationResult, !text.isEmpty {
                             Text(text)
                                 .foregroundColor(.white)
                                 .padding()
@@ -102,34 +58,29 @@ struct VideoEditorView: View {
                     .keyboardShortcut("f", modifiers: .command)
                 }
                 .background(KeyboardShortcutCatcher(openFullScreen: { openFullScreen(player: player) }))
-                // --- КНОПКИ ПОД ВИДЕО ---
                 HStack {
                     Button("Транскрибировать") {
                         Task { await transcribeWithWhisper() }
                     }
-                    
                     Button("Перевести") {
-                        isTranslating.toggle()
+                        transcriptionState.isTranslating.toggle()
                     }
-                    .popover(isPresented: $isTranslating, arrowEdge: .bottom) {
+                    .popover(isPresented: $transcriptionState.isTranslating, arrowEdge: .bottom) {
                         VStack {
-                            Picker("Выберите язык", selection: $selectedLanguage) {
+                            Picker("Выберите язык", selection: $transcriptionState.selectedLanguage) {
                                 ForEach(supportedLanguages, id: \.code) { lang in
                                     Text(lang.name).tag(lang.code)
                                 }
                             }
                             .pickerStyle(MenuPickerStyle())
-                            
                             Button("Начать перевод") {
-                                Task { await translateWithWhisper(targetLanguage: selectedLanguage) }
-                                isTranslating = false
+                                Task { await translateWithWhisper(targetLanguage: transcriptionState.selectedLanguage) }
+                                transcriptionState.isTranslating = false
                             }
                         }
                         .padding()
                     }
-                    
                     Spacer()
-                    
                     Button(role: .destructive) {
                         project.closeProject()
                     } label: {
@@ -141,7 +92,7 @@ struct VideoEditorView: View {
                 Text("Загрузка видео...")
                     .onAppear {
                         if let url = project.videoURL {
-                            self.player = AVPlayer(url: url)
+                            transcriptionState.player = AVPlayer(url: url)
                         }
                     }
             }
@@ -152,26 +103,24 @@ struct VideoEditorView: View {
             fullScreenWindowController = nil
         }
         .onAppear {
-            if player == nil, let url = project.videoURL {
-                player = AVPlayer(url: url)
+            if transcriptionState.player == nil, let url = project.videoURL {
+                transcriptionState.player = AVPlayer(url: url)
             }
         }
         .onChange(of: project.videoURL) { _, newURL in
-            player?.pause()
+            transcriptionState.player?.pause()
             stopWhisperProcessing()
-            transcriptionResult = nil
-            translationResult = nil
-            
+            transcriptionState.transcriptionResult = nil
+            transcriptionState.translationResult = nil
             if let newURL = newURL {
                 let newPlayer = AVPlayer(url: newURL)
-                self.player = newPlayer
+                transcriptionState.player = newPlayer
                 newPlayer.play()
             } else {
-                self.player = nil
+                transcriptionState.player = nil
             }
         }
     }
-    
     private func openFullScreen(player: AVPlayer) {
         fullScreenWindowController?.close()
         let controller = FullScreenWindowController(player: player) {
@@ -181,37 +130,37 @@ struct VideoEditorView: View {
         controller.showWindow(nil)
         controller.window?.toggleFullScreen(nil)
     }
-    
     private func stopWhisperProcessing() {
-        if let player = self.player, let token = self.timeObserverToken {
+        if let player = transcriptionState.player, let token = transcriptionState.timeObserverToken {
             player.removeTimeObserver(token)
-            self.timeObserverToken = nil
+            transcriptionState.timeObserverToken = nil
         }
-        self.processedSegments.removeAll()
+        transcriptionState.processedSegments.removeAll()
     }
-
     func transcribeWithWhisper() async {
+        stopWhisperProcessing()
+        transcriptionState.transcriptionResult = nil
+        transcriptionState.translationResult = nil
         await startProcessing(isTranslation: false)
     }
-
     func translateWithWhisper(targetLanguage: String) async {
+        stopWhisperProcessing()
+        transcriptionState.transcriptionResult = nil
+        transcriptionState.translationResult = nil
         await startProcessing(isTranslation: true, language: targetLanguage)
     }
-    
     private func startProcessing(isTranslation: Bool, language: String = "ru") async {
-        guard let player = self.player, let videoURL = (player.currentItem?.asset as? AVURLAsset)?.url else {
+        guard let player = transcriptionState.player, let videoURL = (player.currentItem?.asset as? AVURLAsset)?.url else {
             print("[ERROR] Player or video URL not available.")
             return
         }
-        
         stopWhisperProcessing()
-        
         if isTranslation {
-            self.translationResult = ""
-            self.transcriptionResult = nil
+            transcriptionState.translationResult = ""
+            transcriptionState.transcriptionResult = nil
         } else {
-            self.transcriptionResult = ""
-            self.translationResult = nil
+            transcriptionState.transcriptionResult = ""
+            transcriptionState.translationResult = nil
         }
 
         guard let whisperPath = getWhisperPath() else { 
@@ -250,20 +199,20 @@ struct VideoEditorView: View {
 
         print("[DEBUG] Starting processing with language: \(language), isTranslation: \(isTranslation)")
 
-        timeObserverToken = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1.0, preferredTimescale: 600), queue: .main) { [self] _ in
-            guard let currentTime = self.player?.currentTime().seconds, currentTime < durationInSeconds else { return }
+        transcriptionState.timeObserverToken = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1.0, preferredTimescale: 600), queue: .main) { [self] _ in
+            guard let currentTime = self.transcriptionState.player?.currentTime().seconds, currentTime < durationInSeconds else { return }
             
             let segmentIndex = Int(floor(currentTime / segmentDuration))
             
-            if !processedSegments.contains(segmentIndex) {
-                processedSegments.insert(segmentIndex)
+            if !transcriptionState.processedSegments.contains(segmentIndex) {
+                transcriptionState.processedSegments.insert(segmentIndex)
                 
                 Task {
                     await MainActor.run {
                         if isTranslation {
-                            self.translationResult = "..."
+                            self.transcriptionState.translationResult = "..."
                         } else {
-                            self.transcriptionResult = "..."
+                            self.transcriptionState.transcriptionResult = "..."
                         }
                     }
                     
@@ -280,9 +229,9 @@ struct VideoEditorView: View {
                     
                     await MainActor.run {
                         if isTranslation {
-                            self.translationResult = result
+                            self.transcriptionState.translationResult = result
                         } else {
-                            self.transcriptionResult = result
+                            self.transcriptionState.transcriptionResult = result
                         }
                     }
                 }
@@ -433,6 +382,34 @@ struct VideoEditorView: View {
             }
         }.value
     }
+
+    private func getWhisperPath() -> String? {
+        // 1. Пробуем найти в bundle (production)
+        if let bundlePath = Bundle.main.path(forResource: "whisper-cli", ofType: nil, inDirectory: nil) {
+            print("[DEBUG] Found whisper-cli in bundle: \(bundlePath)")
+            return bundlePath
+        }
+        // 2. Пробуем абсолютный путь к бинарю (development)
+        let devPath = "/Users/stanislave/Documents/Projects/SubMagic/SubMagic/bin/whisper-cli"
+        if FileManager.default.fileExists(atPath: devPath) {
+            print("[DEBUG] Found whisper-cli in dev path: \(devPath)")
+            return devPath
+        }
+        // 3. Fallback к старому бинарю (если новый не найден)
+        let oldDevPath = "/Users/stanislave/Documents/Projects/SubMagic/SubMagic/bin/whisper"
+        if FileManager.default.fileExists(atPath: oldDevPath) {
+            print("[DEBUG] Found old whisper in dev path: \(oldDevPath)")
+            return oldDevPath
+        }
+        // 4. Пробуем UserDefaults (если пользователь указал свой путь)
+        if let userPath = UserDefaults.standard.string(forKey: "whisperPath"),
+           FileManager.default.fileExists(atPath: userPath) {
+            print("[DEBUG] Found whisper in user path: \(userPath)")
+            return userPath
+        }
+        print("[ERROR] Whisper binary not found in any location")
+        return nil
+    }
 }
 
 import AppKit
@@ -552,5 +529,5 @@ struct KeyboardShortcutCatcher: NSViewRepresentable {
 }
 
 #Preview {
-    VideoEditorView(project: ProjectModel())
+    VideoEditorView(project: ProjectModel(), transcriptionState: TranscriptionState())
 }
