@@ -71,7 +71,10 @@ class WhisperModelManager: ObservableObject {
                 if let url = url {
                     do {
                         // Еще раз проверяем наличие папки перед перемещением
-                        try FileManager.default.createDirectory(at: modelsDirectory, withIntermediateDirectories: true, attributes: nil)
+                        try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+                        if FileManager.default.fileExists(atPath: destination.path) {
+                            try FileManager.default.removeItem(at: destination)
+                        }
                         try FileManager.default.moveItem(at: url, to: destination)
                         self.setModelPath(destination.path)
                         completion(true)
