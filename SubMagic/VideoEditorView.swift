@@ -263,6 +263,7 @@ struct VideoEditorView: View {
         stopWhisperProcessing()
         transcriptionState.transcriptionResult = nil
         transcriptionState.translationResult = nil
+        await transcriptionState.player?.seek(to: .zero)
         await startProcessing(isTranslation: false)
     }
     func translateWithWhisper(targetLanguage: String) async {
