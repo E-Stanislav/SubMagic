@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		0500723A2E09529D0083E73F /* ViewInspector in Frameworks */ = {isa = PBXBuildFile; productRef = 050072392E09529D0083E73F /* ViewInspector */; settings = {ATTRIBUTES = (Required, ); }; };
+		0500723C2E09531E0083E73F /* ViewInspector in Frameworks */ = {isa = PBXBuildFile; productRef = 0500723B2E09531E0083E73F /* ViewInspector */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		05BC20872E068AB100F63687 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,6 +32,7 @@
 		05BC20782E068AB100F63687 /* SubMagic.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SubMagic.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		05BC20862E068AB100F63687 /* SubMagicTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SubMagicTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		05BC20902E068AB100F63687 /* SubMagicUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SubMagicUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		05C51A8B2E0952290004AFE4 /* SubMagic.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = SubMagic.xctestplan; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -72,6 +78,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0500723C2E09531E0083E73F /* ViewInspector in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -79,18 +86,28 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0500723A2E09529D0083E73F /* ViewInspector in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		050072382E09529D0083E73F /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		05BC206F2E068AB100F63687 = {
 			isa = PBXGroup;
 			children = (
+				05C51A8B2E0952290004AFE4 /* SubMagic.xctestplan */,
 				05BC207A2E068AB100F63687 /* SubMagic */,
 				05BC20892E068AB100F63687 /* SubMagicTests */,
 				05BC20932E068AB100F63687 /* SubMagicUITests */,
+				050072382E09529D0083E73F /* Frameworks */,
 				05BC20792E068AB100F63687 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -148,6 +165,7 @@
 			);
 			name = SubMagicTests;
 			packageProductDependencies = (
+				0500723B2E09531E0083E73F /* ViewInspector */,
 			);
 			productName = SubMagicTests;
 			productReference = 05BC20862E068AB100F63687 /* SubMagicTests.xctest */;
@@ -171,6 +189,7 @@
 			);
 			name = SubMagicUITests;
 			packageProductDependencies = (
+				050072392E09529D0083E73F /* ViewInspector */,
 			);
 			productName = SubMagicUITests;
 			productReference = 05BC20902E068AB100F63687 /* SubMagicUITests.xctest */;
@@ -208,6 +227,9 @@
 			);
 			mainGroup = 05BC206F2E068AB100F63687;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				05C51A8A2E0952120004AFE4 /* XCRemoteSwiftPackageReference "ViewInspector" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 05BC20792E068AB100F63687 /* Products */;
 			projectDirPath = "";
@@ -556,6 +578,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		05C51A8A2E0952120004AFE4 /* XCRemoteSwiftPackageReference "ViewInspector" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/nalexn/ViewInspector.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.10.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		050072392E09529D0083E73F /* ViewInspector */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 05C51A8A2E0952120004AFE4 /* XCRemoteSwiftPackageReference "ViewInspector" */;
+			productName = ViewInspector;
+		};
+		0500723B2E09531E0083E73F /* ViewInspector */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 05C51A8A2E0952120004AFE4 /* XCRemoteSwiftPackageReference "ViewInspector" */;
+			productName = ViewInspector;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 05BC20702E068AB100F63687 /* Project object */;
 }

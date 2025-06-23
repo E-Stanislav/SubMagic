@@ -45,6 +45,22 @@ struct VideoEditorView: View {
                                 .padding(.bottom, 50)
                                 .transition(.opacity.animation(.easeInOut))
                         }
+                        if let error = transcriptionState.lastError {
+                            VStack {
+                                Spacer()
+                                Text(error)
+                                    .foregroundColor(.white)
+                                    .padding()
+                                    .background(Color.red.opacity(0.8))
+                                    .cornerRadius(8)
+                                    .padding(.bottom, 60)
+                                Button("Скрыть ошибку") {
+                                    transcriptionState.lastError = nil
+                                }
+                                .padding(.bottom, 40)
+                            }
+                            .transition(.opacity.animation(.easeInOut))
+                        }
                     }
                 }
                 .onDisappear {
@@ -258,6 +274,7 @@ struct VideoEditorView: View {
         
         guard success else {
             print("[ERROR] Failed to extract segment \(segmentIndex)")
+            transcriptionState.lastError = "Ошибка при извлечении сегмента \(segmentIndex)"
             return ""
         }
 
@@ -269,6 +286,7 @@ struct VideoEditorView: View {
 
         guard let audioTrack = (try? await asset.loadTracks(withMediaType: .audio))?.first else {
             print("[ERROR] No audio track found in the asset.")
+            transcriptionState.lastError = "Не найден аудиотрек в ассете"
             return false
         }
 
@@ -286,6 +304,7 @@ struct VideoEditorView: View {
             
             if reader.canAdd(readerOutput) { reader.add(readerOutput) } else {
                 print("[ERROR] Cannot add reader output.")
+                transcriptionState.lastError = "Невозможно добавить выходной поток чтения"
                 return false
             }
 
@@ -303,6 +322,7 @@ struct VideoEditorView: View {
 
             if writer.canAdd(writerInput) { writer.add(writerInput) } else {
                 print("[ERROR] Cannot add writer input.")
+                transcriptionState.lastError = "Невозможно добавить входной поток записи"
                 return false
             }
             
@@ -311,6 +331,7 @@ struct VideoEditorView: View {
 
             guard reader.startReading() else {
                 print("[ERROR] Failed to start asset reader: \(reader.error?.localizedDescription ?? "Unknown error")")
+                transcriptionState.lastError = "Невозможно начать чтение ассета: \(reader.error?.localizedDescription ?? "Неизвестная ошибка")"
                 return false
             }
             
@@ -340,6 +361,7 @@ struct VideoEditorView: View {
             }
         } catch {
             print("[ERROR] Failed to set up AVAssetReader/Writer: \(error.localizedDescription)")
+            transcriptionState.lastError = "Невозможно настроить AVAssetReader/Writer: \(error.localizedDescription)"
             return false
         }
     }
@@ -380,12 +402,14 @@ struct VideoEditorView: View {
                 
                 if !error.isEmpty {
                     print("[ERROR] Whisper stderr: \(error)")
+                    transcriptionState.lastError = "Ошибка при выполнении whisper: \(error)"
                 }
                 
                 print("[DEBUG] Whisper output: '\(output)'")
                 return output
             } catch {
                 print("[ERROR] Failed to run whisper process: \(error.localizedDescription)")
+                transcriptionState.lastError = "Невозможно выполнить процесс whisper: \(error.localizedDescription)"
                 return ""
             }
         }.value
