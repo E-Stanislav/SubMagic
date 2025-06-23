@@ -16,13 +16,29 @@ class TranscriptionState: ObservableObject {
     var timeObserverToken: Any?
     
     func setVideo(url: URL?) {
+        if let player = player, let token = timeObserverToken {
+            print("[AVPLAYER] Removing time observer from player: \(player)")
+            player.removeTimeObserver(token)
+            timeObserverToken = nil
+        }
+        if let player = player {
+            print("[AVPLAYER] Pausing player: \(player)")
+            player.pause()
+            print("[AVPLAYER] Replacing current item with nil for player: \(player)")
+            player.replaceCurrentItem(with: nil)
+            print("[AVPLAYER] Setting player to nil")
+        }
+        transcriptionResult = nil
+        translationResult = nil
+        isTranslating = false
+        processedSegments.removeAll()
         videoURL = url
         if let url = url {
+            print("[AVPLAYER] Creating new AVPlayer for url: \(url)")
             player = AVPlayer(url: url)
         } else {
             player = nil
         }
-        reset()
     }
     
     func reset() {

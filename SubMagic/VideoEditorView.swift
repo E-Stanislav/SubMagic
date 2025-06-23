@@ -41,6 +41,7 @@ struct VideoEditorView: View {
             if let player = transcriptionState.player {
                 ZStack {
                     VideoPlayer(player: player)
+                        .id(project.videoURL)
                         .onAppear {
                             player.play()
                         }
@@ -93,7 +94,7 @@ struct VideoEditorView: View {
                 }
                 .background(KeyboardShortcutCatcher(openFullScreen: { openFullScreen(player: player) }))
                 HStack {
-                    Button("Транскрибировать") {
+                    Button("Субтитры") {
                         transcriptionState.subtitlesHidden = false
                         Task { await transcribeWithWhisper() }
                     }
