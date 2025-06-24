@@ -14,37 +14,51 @@ class WhisperBinaryManager: ObservableObject {
     private let fileManager = FileManager.default
     
     init() {
-        // Устанавливаем путь к whisper всегда на актуальный
-        let defaultPath = "/Users/stanislave/Documents/Projects/SubMagic/SubMagic/bin/whisper"
-        UserDefaults.standard.set(defaultPath, forKey: "whisperPath")
-        // Проверяем и делаем бинарь исполняемым
-        do {
-            var attributes = try fileManager.attributesOfItem(atPath: defaultPath)
-            if let permissions = attributes[.posixPermissions] as? NSNumber {
-                let perms = permissions.uint16Value
-                if perms & 0o111 == 0 {
-                    // Нет исполняемых битов, добавим их
-                    try fileManager.setAttributes([.posixPermissions: perms | 0o755], ofItemAtPath: defaultPath)
-                }
+        // 1. Пробуем найти бинарь в Bundle
+        if let bundlePath = Bundle.main.path(forResource: "whisper", ofType: nil) {
+            UserDefaults.standard.set(bundlePath, forKey: "whisperPath")
+        } else {
+            // 2. Пробуем найти бинарь в папке bin рядом с приложением
+            if let binURL = Bundle.main.resourceURL?.appendingPathComponent("bin/whisper"),
+               fileManager.fileExists(atPath: binURL.path) {
+                UserDefaults.standard.set(binURL.path, forKey: "whisperPath")
             }
-        } catch {
-            #if DEBUG
-            print("[WhisperBinaryManager] Не удалось проверить/установить права на whisper: \(error)")
-            #endif
+        }
+        // Проверяем и делаем бинарь исполняемым
+        if let whisperPath = UserDefaults.standard.string(forKey: "whisperPath") {
+            do {
+                var attributes = try fileManager.attributesOfItem(atPath: whisperPath)
+                if let permissions = attributes[.posixPermissions] as? NSNumber {
+                    let perms = permissions.uint16Value
+                    if perms & 0o111 == 0 {
+                        // Нет исполняемых битов, добавим их
+                        try fileManager.setAttributes([.posixPermissions: perms | 0o755], ofItemAtPath: whisperPath)
+                    }
+                }
+            } catch {
+                #if DEBUG
+                print("[WhisperBinaryManager] Не удалось проверить/установить права на whisper: \(error)")
+                #endif
+            }
         }
     }
     
     func ensureWhisperBinary() {
         // Принудительно обновляем UserDefaults и @AppStorage на актуальный путь
-        let correctPath = "/Users/stanislave/Documents/Projects/SubMagic/SubMagic/bin/whisper"
-        UserDefaults.standard.set(correctPath, forKey: "whisperPath")
+        if let bundlePath = Bundle.main.path(forResource: "whisper", ofType: nil) {
+            UserDefaults.standard.set(bundlePath, forKey: "whisperPath")
+        } else if let binURL = Bundle.main.resourceURL?.appendingPathComponent("bin/whisper"),
+                  fileManager.fileExists(atPath: binURL.path) {
+            UserDefaults.standard.set(binURL.path, forKey: "whisperPath")
+        }
+        let whisperPath = UserDefaults.standard.string(forKey: "whisperPath") ?? ""
         #if DEBUG
-        print("[WhisperBinaryManager] force-set whisperPath to: \(correctPath)")
+        print("[WhisperBinaryManager] force-set whisperPath to: \(whisperPath)")
         #endif
         status = .checkingDependencies
         // Прямая проверка бинаря
-        if fileManager.fileExists(atPath: correctPath) && fileManager.isExecutableFile(atPath: correctPath) {
-            status = .ready(URL(fileURLWithPath: correctPath))
+        if fileManager.fileExists(atPath: whisperPath) && fileManager.isExecutableFile(atPath: whisperPath) {
+            status = .ready(URL(fileURLWithPath: whisperPath))
         } else {
             status = .missingDependencies(["whisper binary not found or not executable"])
         }

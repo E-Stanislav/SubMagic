@@ -35,22 +35,9 @@
 		05C51A8B2E0952290004AFE4 /* SubMagic.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = SubMagic.xctestplan; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		05DE9A032E08775400DF6E3F /* Exceptions for "SubMagic" folder in "SubMagic" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				README_cmake_manual.txt,
-			);
-			target = 05BC20772E068AB100F63687 /* SubMagic */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		05BC207A2E068AB100F63687 /* SubMagic */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				05DE9A032E08775400DF6E3F /* Exceptions for "SubMagic" folder in "SubMagic" target */,
-			);
 			path = SubMagic;
 			sourceTree = "<group>";
 		};

@@ -23,10 +23,10 @@ struct VideoEditorView: View {
     @State private var showExportModelPicker = false
     @State private var selectedExportModel: String = ""
     let availableModels: [(path: String, name: String, speed: String)] = [
-        ("/Users/stanislave/Documents/Projects/SubMagic/SubMagic/bin/ggml-base.en.bin", "base (быстро, менее точно)", "fast"),
-        ("/Users/stanislave/Documents/Projects/SubMagic/SubMagic/bin/ggml-small.en.bin", "small (быстро, средняя точность)", "fast"),
-        ("/Users/stanislave/Library/Application Support/SubMagic/models/ggml-medium.bin", "medium (медленнее, точнее)", "accurate"),
-        ("/Users/stanislave/Library/Application Support/SubMagic/models/ggml-large-v3.bin", "large (самый медленный, максимальная точность)", "accurate")
+        ("bin/ggml-base.en.bin", "base (быстро, менее точно)", "fast"),
+        ("bin/ggml-small.en.bin", "small (быстро, средняя точность)", "fast"),
+        ("models/ggml-medium.bin", "medium (медленнее, точнее)", "accurate"),
+        ("models/ggml-large-v3.bin", "large (самый медленный, максимальная точность)", "accurate")
     ]
     var body: some View {
         VStack(spacing: 0) {
@@ -296,20 +296,11 @@ struct VideoEditorView: View {
         // Получаем путь к модели - сначала из UserDefaults, затем из папки bin
         var modelPath = UserDefaults.standard.string(forKey: "whisperModelPath") ?? ""
         if modelPath.isEmpty || !FileManager.default.fileExists(atPath: modelPath) {
-            // Пробуем найти модель в bundle приложения
-            if let bundleModelPath = Bundle.main.path(forResource: "ggml-base.en", ofType: "bin") {
-                modelPath = bundleModelPath
-                print("[DEBUG] Using model from app bundle: \(modelPath)")
-            } else {
-                // Пробуем найти модель в папке bin
-                let binModelPath = "/Users/stanislave/Documents/Projects/SubMagic/SubMagic/bin/ggml-base.en.bin"
-                if FileManager.default.fileExists(atPath: binModelPath) {
-                    modelPath = binModelPath
-                    print("[DEBUG] Using model from bin directory: \(modelPath)")
-                } else {
-                    print("[ERROR] Model file not found. Please download a model in Settings.")
-                    return
-                }
+            // Пробуем найти модель по имени
+            modelPath = resolveModelPath(named: "ggml-base.en.bin") ?? ""
+            if modelPath.isEmpty {
+                print("[ERROR] Model file not found. Please download a model in Settings.")
+                return
             }
         } else {
             print("[DEBUG] Using model from UserDefaults: \(modelPath)")
@@ -520,17 +511,17 @@ struct VideoEditorView: View {
             print("[DEBUG] Found whisper-cli in bundle: \(bundlePath)")
             return bundlePath
         }
-        // 2. Пробуем абсолютный путь к бинарю (development)
-        let devPath = "/Users/stanislave/Documents/Projects/SubMagic/SubMagic/bin/whisper-cli"
-        if FileManager.default.fileExists(atPath: devPath) {
-            print("[DEBUG] Found whisper-cli in dev path: \(devPath)")
-            return devPath
+        // 2. Пробуем относительный путь bin/whisper-cli
+        if let binURL = Bundle.main.resourceURL?.appendingPathComponent("bin/whisper-cli"),
+           FileManager.default.fileExists(atPath: binURL.path) {
+            print("[DEBUG] Found whisper-cli in bin: \(binURL.path)")
+            return binURL.path
         }
         // 3. Fallback к старому бинарю (если новый не найден)
-        let oldDevPath = "/Users/stanislave/Documents/Projects/SubMagic/SubMagic/bin/whisper"
-        if FileManager.default.fileExists(atPath: oldDevPath) {
-            print("[DEBUG] Found old whisper in dev path: \(oldDevPath)")
-            return oldDevPath
+        if let oldBinURL = Bundle.main.resourceURL?.appendingPathComponent("bin/whisper"),
+           FileManager.default.fileExists(atPath: oldBinURL.path) {
+            print("[DEBUG] Found old whisper in bin: \(oldBinURL.path)")
+            return oldBinURL.path
         }
         // 4. Пробуем UserDefaults (если пользователь указал свой путь)
         if let userPath = UserDefaults.standard.string(forKey: "whisperPath"),
@@ -557,16 +548,11 @@ struct VideoEditorView: View {
             }
             var modelPath = selectedModelPath ?? UserDefaults.standard.string(forKey: "whisperModelPath") ?? ""
             if modelPath.isEmpty || !FileManager.default.fileExists(atPath: modelPath) {
-                if let bundleModelPath = Bundle.main.path(forResource: "ggml-base.en", ofType: "bin") {
-                    modelPath = bundleModelPath
-                } else {
-                    let binModelPath = "/Users/stanislave/Documents/Projects/SubMagic/SubMagic/bin/ggml-base.en.bin"
-                    if FileManager.default.fileExists(atPath: binModelPath) {
-                        modelPath = binModelPath
-                    } else {
-                        transcriptionState.lastError = "Не найден файл модели. Скачайте модель в настройках."
-                        return
-                    }
+                // Пробуем найти модель по имени
+                modelPath = resolveModelPath(named: "ggml-base.en.bin") ?? ""
+                if modelPath.isEmpty {
+                    print("[ERROR] Model file not found. Please download a model in Settings.")
+                    return
                 }
             }
             let language = transcriptionState.selectedLanguage
@@ -703,6 +689,30 @@ struct VideoEditorView: View {
                 }
             }
         }
+    }
+
+    // --- Добавлено: функция поиска модели по имени ---
+    private func resolveModelPath(named filename: String) -> String? {
+        // 1. Application Support
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        let appSupportPath = appSupport?.appendingPathComponent("SubMagic/models/").appendingPathComponent(filename).path
+        if let appSupportPath, FileManager.default.fileExists(atPath: appSupportPath) {
+            print("[DEBUG] Using model from Application Support: \(appSupportPath)")
+            return appSupportPath
+        }
+        // 2. Bundle
+        if let bundlePath = Bundle.main.path(forResource: filename, ofType: nil) {
+            print("[DEBUG] Using model from bundle: \(bundlePath)")
+            return bundlePath
+        }
+        // 3. bin/
+        if let binURL = Bundle.main.resourceURL?.appendingPathComponent("bin/").appendingPathComponent(filename),
+           FileManager.default.fileExists(atPath: binURL.path) {
+            print("[DEBUG] Using model from bin: \(binURL.path)")
+            return binURL.path
+        }
+        print("[ERROR] Model file not found: \(filename)")
+        return nil
     }
 }
 
